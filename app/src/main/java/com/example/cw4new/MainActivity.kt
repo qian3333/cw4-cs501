@@ -4,343 +4,98 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import kotlinx.coroutines.Job
+import com.example.cw4new.ui.theme.Cw4newTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.example.cw4new.ui.theme.Cw4newTheme
-
-sealed class CounterAction {
-    object Increment : CounterAction()
-    object Decrement : CounterAction()
-    object Reset : CounterAction()
-    object ToggleAutoMode : CounterAction()
-    data class SetInterval(val interval: Int) : CounterAction()
-}
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.random.Random
+import android.graphics.Paint
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.tooling.preview.Preview
 
 
-enum class Screen {
-    Counter,
-    Settings
-}
+data class TemperatureReading(
+    val value: Float,
+    val timestamp: Long = System.currentTimeMillis()
+)
 
 
-class CounterViewModel : ViewModel() {
-
-    private val _count = MutableStateFlow(0)
-    private val _isAutoMode = MutableStateFlow(false)
-    private val _autoIncrementInterval = MutableStateFlow(3)
-
-    val count: StateFlow<Int> = _count.asStateFlow()
-    val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
-    val autoIncrementInterval: StateFlow<Int> = _autoIncrementInterval.asStateFlow()
+data class TemperatureState(
+    val readings: List<TemperatureReading> = emptyList(),
+    val isRunning: Boolean = true
+)
 
 
-    private var autoIncrementJob: Job? = null
+class TemperatureViewModel : ViewModel() {
+    private val _state = MutableStateFlow(TemperatureState())
+    val state: StateFlow<TemperatureState> = _state.asStateFlow()
 
-
-    fun handleAction(action: CounterAction) {
-        when (action) {
-            CounterAction.Increment -> _count.value++
-            CounterAction.Decrement -> _count.value--
-            CounterAction.Reset -> _count.value = 0
-            CounterAction.ToggleAutoMode -> {
-                _isAutoMode.value = !_isAutoMode.value
-                if (_isAutoMode.value) {
-                    startAutoIncrement()
-                } else {
-                    stopAutoIncrement()
-                }
-            }
-            is CounterAction.SetInterval -> {
-                val newInterval = action.interval.coerceAtLeast(1)
-                _autoIncrementInterval.value = newInterval
-
-                if (_isAutoMode.value) {
-                    startAutoIncrement()
-                }
-            }
-        }
+    init {
+        startGeneratingData()
     }
 
-
-    private fun startAutoIncrement() {
-        autoIncrementJob?.cancel()
-        autoIncrementJob = viewModelScope.launch {
+    private fun startGeneratingData() {
+        viewModelScope.launch {
             while (true) {
-                delay(_autoIncrementInterval.value * 1000L)
-                _count.value++
-            }
-        }
-    }
+                delay(2000)
+                _state.update { currentState ->
+                    if (currentState.isRunning) {
+                        // 生成65-85°F之间的随机温度
+                        val newReading = TemperatureReading(
+                            value = 65 + Random.nextFloat() * 20
+                        )
 
-
-    private fun stopAutoIncrement() {
-        autoIncrementJob?.cancel()
-        autoIncrementJob = null
-    }
-
-
-    override fun onCleared() {
-        super.onCleared()
-        stopAutoIncrement()
-    }
-}
-
-
-@Composable
-fun AppNavigation(
-    viewModel: CounterViewModel,
-    modifier: Modifier = Modifier
-) {
-    val navController = rememberNavController()
-
-    NavHost(
-        navController = navController,
-        startDestination = Screen.Counter.name,
-        modifier = modifier
-    ) {
-        composable(Screen.Counter.name) {
-            CounterScreen(
-                viewModel = viewModel,
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings.name)
+                        val newReadings = (currentState.readings + newReading).takeLast(20)
+                        currentState.copy(readings = newReadings)
+                    } else {
+                        currentState
+                    }
                 }
-            )
-        }
-        composable(Screen.Settings.name) {
-            SettingsScreen(
-                viewModel = viewModel,
-                onNavigateBack = {
-                    navController.popBackStack()
-                }
-            )
+            }
         }
     }
-}
 
-
-@Composable
-fun CounterScreen(
-    viewModel: CounterViewModel,
-    onNavigateToSettings: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-
-    val count by viewModel.count.collectAsStateWithLifecycle()
-    val isAutoMode by viewModel.isAutoMode.collectAsStateWithLifecycle()
-    val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-
-        Text(
-            text = "Count: $count",
-            fontSize = 48.sp,
-            modifier = Modifier.padding(24.dp)
-        )
-
-
-        Text(
-            text = "Auto mode: ${if (isAutoMode) "ON" else "OFF"}",
-            fontSize = 18.sp,
-            modifier = Modifier.padding(16.dp)
-        )
-
-
-        Text(
-            text = "Interval: ${interval}s",
-            fontSize = 16.sp,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Button(
-                onClick = { viewModel.handleAction(CounterAction.Decrement) },
-                modifier = Modifier.size(80.dp, 80.dp)
-            ) {
-                Text(text = "-1", fontSize = 24.sp)
-            }
-
-            Button(
-                onClick = { viewModel.handleAction(CounterAction.Reset) },
-                modifier = Modifier.size(80.dp, 80.dp)
-            ) {
-                Text(text = "Reset", fontSize = 18.sp)
-            }
-
-            Button(
-                onClick = { viewModel.handleAction(CounterAction.Increment) },
-                modifier = Modifier.size(80.dp, 80.dp)
-            ) {
-                Text(text = "+1", fontSize = 24.sp)
-            }
-        }
-
-        Spacer(modifier = Modifier.size(32.dp))
-
-
-        Button(
-            onClick = { viewModel.handleAction(CounterAction.ToggleAutoMode) },
-            modifier = Modifier.size(200.dp, 60.dp)
-        ) {
-            Text(
-                text = if (isAutoMode) "Turn OFF Auto" else "Turn ON Auto",
-                fontSize = 18.sp
-            )
-        }
-
-
-        IconButton(
-            onClick = onNavigateToSettings,
-            modifier = Modifier
-                .align(Alignment.End)
-                .padding(top = 32.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "Settings"
-            )
-        }
+    fun toggleRunning() {
+        _state.update { it.copy(isRunning = !it.isRunning) }
     }
 }
-
-
-@Composable
-fun SettingsScreen(
-    viewModel: CounterViewModel,
-    onNavigateBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
-    var intervalText by remember { mutableStateOf(TextFieldValue(interval.toString())) }
-
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Top
-    ) {
-        Text(
-            text = "Settings",
-            fontSize = 24.sp,
-            modifier = Modifier.padding(24.dp)
-        )
-
-        Text(
-            text = "Auto-increment Interval (seconds):",
-            fontSize = 18.sp,
-            modifier = Modifier.padding(8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            Button(
-                onClick = {
-                    val newInterval = (intervalText.text.toIntOrNull() ?: 1) - 1
-                    intervalText = TextFieldValue(newInterval.coerceAtLeast(1).toString())
-                },
-                modifier = Modifier.size(50.dp, 50.dp)
-            ) {
-                Text(text = "-")
-            }
-
-            Spacer(modifier = Modifier.size(16.dp))
-
-            Text(
-                text = intervalText.text,
-                fontSize = 24.sp,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            Spacer(modifier = Modifier.size(16.dp))
-
-
-            Button(
-                onClick = {
-                    val newInterval = (intervalText.text.toIntOrNull() ?: 1) + 1
-                    intervalText = TextFieldValue(newInterval.toString())
-                },
-                modifier = Modifier.size(50.dp, 50.dp)
-            ) {
-                Text(text = "+")
-            }
-        }
-
-        Spacer(modifier = Modifier.size(32.dp))
-
-
-        Button(
-            onClick = {
-                val newInterval = intervalText.text.toIntOrNull() ?: 3
-                viewModel.handleAction(CounterAction.SetInterval(newInterval))
-                onNavigateBack()
-            },
-            modifier = Modifier.size(150.dp, 50.dp)
-        ) {
-            Text(text = "Save", fontSize = 18.sp)
-        }
-
-        Spacer(modifier = Modifier.size(16.dp))
-
-        Button(
-            onClick = onNavigateBack,
-            modifier = Modifier.size(150.dp, 50.dp)
-        ) {
-            Text(text = "Back", fontSize = 18.sp)
-        }
-    }
-}
-
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -349,10 +104,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             Cw4newTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val viewModel: CounterViewModel = viewModel()
-
-                    AppNavigation(
-                        viewModel = viewModel,
+                    TemperatureDashboard(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -361,21 +113,227 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-
-@Preview(showBackground = true)
 @Composable
-fun CounterPreview() {
-    Cw4newTheme {
-        val viewModel: CounterViewModel = viewModel()
-        CounterScreen(viewModel = viewModel, onNavigateToSettings = {})
+fun TemperatureDashboard(
+    modifier: Modifier = Modifier,
+    viewModel: TemperatureViewModel = viewModel()
+) {
+    val state by viewModel.state.collectAsState()
+    val readings = state.readings
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Temperature Dashboard",
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Button(onClick = { viewModel.toggleRunning() }) {
+                Text(if (state.isRunning) "Pause" else "Resume")
+            }
+        }
+
+
+        if (readings.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Summary Statistics", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceAround
+                    ) {
+                        val current = readings.last().value
+                        val average = readings.map { it.value }.average()
+                        val min = readings.minOf { it.value }
+                        val max = readings.maxOf { it.value }
+
+                        StatItem("Current", "%.1f°F".format(current))
+                        StatItem("Average", "%.1f°F".format(average))
+                        StatItem("Min", "%.1f°F".format(min))
+                        StatItem("Max", "%.1f°F".format(max))
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+            ) {
+                Box(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Temperature Trend",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.align(Alignment.TopStart)
+                    )
+                    if (readings.size >= 2) {
+                        TemperatureChart(
+                            readings = readings,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(
+                            "Need more data to display chart",
+                            modifier = Modifier.align(Alignment.Center),
+                            color = Color.Gray
+                        )
+                    }
+                }
+            }
+        }
+
+
+        Text(
+            "Recent Readings (${readings.size}/20)",
+            style = MaterialTheme.typography.titleMedium
+        )
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(readings.reversed()) { reading ->
+                val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+                val timeString = timeFormat.format(Date(reading.timestamp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(timeString)
+                    Text("%.1f°F".format(reading.value))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatItem(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            color = Color.Gray
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
+}
+
+@Composable
+private fun TemperatureChart(
+    readings: List<TemperatureReading>,
+    modifier: Modifier = Modifier
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    Canvas(modifier = modifier) {
+        val width = size.width
+        val height = size.height
+        val padding = 20f
+
+        val chartWidth = width - padding * 2
+        val chartHeight = height - padding * 2
+
+        val minTemp = 64f
+        val maxTemp = 86f
+        val tempRange = maxTemp - minTemp
+
+        val xStep = chartWidth / (readings.size - 1)
+
+        val path = Path()
+        readings.forEachIndexed { index, reading ->
+
+            val x = padding + index * xStep
+
+            val y = padding + chartHeight - ((reading.value - minTemp) / tempRange * chartHeight)
+
+            if (index == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+
+        drawPath(
+            path = path,
+            color = primaryColor,
+            style = Stroke(width = 3f)
+        )
+
+
+        readings.forEachIndexed { index, reading ->
+            val x = padding + index * xStep
+            val y = padding + chartHeight - ((reading.value - minTemp) / tempRange * chartHeight)
+
+            drawCircle(
+                color = primaryColor,
+                radius = 4f,
+                center = Offset(x, y)
+            )
+        }
+
+
+        drawLine(
+            start = Offset(padding, padding),
+            end = Offset(padding, padding + chartHeight),
+            color = Color.LightGray,
+            strokeWidth = 1f
+        )
+        drawLine(
+            start = Offset(padding, padding + chartHeight),
+            end = Offset(padding + chartWidth, padding + chartHeight),
+            color = Color.LightGray,
+            strokeWidth = 1f
+        )
+
+
+        val textPaint = Paint().apply {
+            color = android.graphics.Color.GRAY
+            textSize = 28f
+            isAntiAlias = true
+        }
+
+        listOf(65f, 75f, 85f).forEach { temp ->
+            val y = padding + chartHeight - ((temp - minTemp) / tempRange * chartHeight)
+            drawLine(
+                start = Offset(padding - 5f, y),
+                end = Offset(padding, y),
+                color = Color.LightGray,
+                strokeWidth = 1f
+            )
+
+            drawIntoCanvas { canvas ->
+                canvas.nativeCanvas.drawText(
+                    "${temp.toInt()}°",
+                    0f,
+                    y,
+                    textPaint
+                )
+            }
+        }
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-fun SettingsPreview() {
+fun DashboardPreview() {
     Cw4newTheme {
-        val viewModel: CounterViewModel = viewModel()
-        SettingsScreen(viewModel = viewModel, onNavigateBack = {})
+        TemperatureDashboard()
     }
 }
