@@ -1,324 +1,381 @@
 package com.example.cw4new
 
-import android.annotation.SuppressLint
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import com.example.cw4new.ui.theme.Cw4newTheme
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import androidx.compose.foundation.layout.Row
 
-data class LifecycleEvent(
-    val eventName: String,
-    val timestamp: Long,
-    val color: Color
-)
+sealed class CounterAction {
+    object Increment : CounterAction()
+    object Decrement : CounterAction()
+    object Reset : CounterAction()
+    object ToggleAutoMode : CounterAction()
+    data class SetInterval(val interval: Int) : CounterAction()
+}
 
 
-class LifeTrackerViewModel : ViewModel() {
-    private val _events = MutableLiveData<List<LifecycleEvent>>(emptyList())
-    val events: LiveData<List<LifecycleEvent>> = _events
+enum class Screen {
+    Counter,
+    Settings
+}
 
 
-    private val _showNotifications = MutableLiveData(true)
-    val showNotifications: LiveData<Boolean> = _showNotifications
+class CounterViewModel : ViewModel() {
+
+    private val _count = MutableStateFlow(0)
+    private val _isAutoMode = MutableStateFlow(false)
+    private val _autoIncrementInterval = MutableStateFlow(3)
+
+    val count: StateFlow<Int> = _count.asStateFlow()
+    val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
+    val autoIncrementInterval: StateFlow<Int> = _autoIncrementInterval.asStateFlow()
 
 
-    fun toggleNotifications(enabled: Boolean) {
-        _showNotifications.value = enabled
+    private var autoIncrementJob: Job? = null
+
+
+    fun handleAction(action: CounterAction) {
+        when (action) {
+            CounterAction.Increment -> _count.value++
+            CounterAction.Decrement -> _count.value--
+            CounterAction.Reset -> _count.value = 0
+            CounterAction.ToggleAutoMode -> {
+                _isAutoMode.value = !_isAutoMode.value
+                if (_isAutoMode.value) {
+                    startAutoIncrement()
+                } else {
+                    stopAutoIncrement()
+                }
+            }
+            is CounterAction.SetInterval -> {
+                val newInterval = action.interval.coerceAtLeast(1)
+                _autoIncrementInterval.value = newInterval
+
+                if (_isAutoMode.value) {
+                    startAutoIncrement()
+                }
+            }
+        }
     }
 
-    fun addEvent(event: LifecycleEvent) {
-        _events.value = listOf(event) + (_events.value ?: emptyList())
+
+    private fun startAutoIncrement() {
+        autoIncrementJob?.cancel()
+        autoIncrementJob = viewModelScope.launch {
+            while (true) {
+                delay(_autoIncrementInterval.value * 1000L)
+                _count.value++
+            }
+        }
+    }
+
+
+    private fun stopAutoIncrement() {
+        autoIncrementJob?.cancel()
+        autoIncrementJob = null
+    }
+
+
+    override fun onCleared() {
+        super.onCleared()
+        stopAutoIncrement()
     }
 }
 
-class LifeCycleLogger(
-    private val viewModel: LifeTrackerViewModel
-) : LifecycleEventObserver {
-    override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
-        val eventName = when (event) {
-            Lifecycle.Event.ON_CREATE -> "ON_CREATE"
-            Lifecycle.Event.ON_START -> "ON_START"
-            Lifecycle.Event.ON_RESUME -> "ON_RESUME"
-            Lifecycle.Event.ON_PAUSE -> "ON_PAUSE"
-            Lifecycle.Event.ON_STOP -> "ON_STOP"
-            Lifecycle.Event.ON_DESTROY -> "ON_DESTROY"
-            Lifecycle.Event.ON_ANY -> "ON_ANY"
-            else -> event.name
-        }
 
-        val color = when (event) {
-            Lifecycle.Event.ON_CREATE, Lifecycle.Event.ON_START -> Color(0xFF4CAF50)
-            Lifecycle.Event.ON_RESUME -> Color(0xFF2196F3)
-            Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> Color(0xFFFFC107)
-            Lifecycle.Event.ON_DESTROY -> Color(0xFFF44336)
-            else -> Color(0xFF9E9E9E)
-        }
+@Composable
+fun AppNavigation(
+    viewModel: CounterViewModel,
+    modifier: Modifier = Modifier
+) {
+    val navController = rememberNavController()
 
-        viewModel.addEvent(
-            LifecycleEvent(
-                eventName = eventName,
-                timestamp = System.currentTimeMillis(),
-                color = color
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Counter.name,
+        modifier = modifier
+    ) {
+        composable(Screen.Counter.name) {
+            CounterScreen(
+                viewModel = viewModel,
+                onNavigateToSettings = {
+                    navController.navigate(Screen.Settings.name)
+                }
             )
-        )
+        }
+        composable(Screen.Settings.name) {
+            SettingsScreen(
+                viewModel = viewModel,
+                onNavigateBack = {
+                    navController.popBackStack()
+                }
+            )
+        }
     }
 }
+
+
+@Composable
+fun CounterScreen(
+    viewModel: CounterViewModel,
+    onNavigateToSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+
+    val count by viewModel.count.collectAsStateWithLifecycle()
+    val isAutoMode by viewModel.isAutoMode.collectAsStateWithLifecycle()
+    val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+
+        Text(
+            text = "Count: $count",
+            fontSize = 48.sp,
+            modifier = Modifier.padding(24.dp)
+        )
+
+
+        Text(
+            text = "Auto mode: ${if (isAutoMode) "ON" else "OFF"}",
+            fontSize = 18.sp,
+            modifier = Modifier.padding(16.dp)
+        )
+
+
+        Text(
+            text = "Interval: ${interval}s",
+            fontSize = 16.sp,
+            modifier = Modifier.padding(bottom = 24.dp)
+        )
+
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = { viewModel.handleAction(CounterAction.Decrement) },
+                modifier = Modifier.size(80.dp, 80.dp)
+            ) {
+                Text(text = "-1", fontSize = 24.sp)
+            }
+
+            Button(
+                onClick = { viewModel.handleAction(CounterAction.Reset) },
+                modifier = Modifier.size(80.dp, 80.dp)
+            ) {
+                Text(text = "Reset", fontSize = 18.sp)
+            }
+
+            Button(
+                onClick = { viewModel.handleAction(CounterAction.Increment) },
+                modifier = Modifier.size(80.dp, 80.dp)
+            ) {
+                Text(text = "+1", fontSize = 24.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.size(32.dp))
+
+
+        Button(
+            onClick = { viewModel.handleAction(CounterAction.ToggleAutoMode) },
+            modifier = Modifier.size(200.dp, 60.dp)
+        ) {
+            Text(
+                text = if (isAutoMode) "Turn OFF Auto" else "Turn ON Auto",
+                fontSize = 18.sp
+            )
+        }
+
+
+        IconButton(
+            onClick = onNavigateToSettings,
+            modifier = Modifier
+                .align(Alignment.End)
+                .padding(top = 32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "Settings"
+            )
+        }
+    }
+}
+
+
+@Composable
+fun SettingsScreen(
+    viewModel: CounterViewModel,
+    onNavigateBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
+    var intervalText by remember { mutableStateOf(TextFieldValue(interval.toString())) }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
+        Text(
+            text = "Settings",
+            fontSize = 24.sp,
+            modifier = Modifier.padding(24.dp)
+        )
+
+        Text(
+            text = "Auto-increment Interval (seconds):",
+            fontSize = 18.sp,
+            modifier = Modifier.padding(8.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+
+            Button(
+                onClick = {
+                    val newInterval = (intervalText.text.toIntOrNull() ?: 1) - 1
+                    intervalText = TextFieldValue(newInterval.coerceAtLeast(1).toString())
+                },
+                modifier = Modifier.size(50.dp, 50.dp)
+            ) {
+                Text(text = "-")
+            }
+
+            Spacer(modifier = Modifier.size(16.dp))
+
+            Text(
+                text = intervalText.text,
+                fontSize = 24.sp,
+                modifier = Modifier.padding(16.dp)
+            )
+
+            Spacer(modifier = Modifier.size(16.dp))
+
+
+            Button(
+                onClick = {
+                    val newInterval = (intervalText.text.toIntOrNull() ?: 1) + 1
+                    intervalText = TextFieldValue(newInterval.toString())
+                },
+                modifier = Modifier.size(50.dp, 50.dp)
+            ) {
+                Text(text = "+")
+            }
+        }
+
+        Spacer(modifier = Modifier.size(32.dp))
+
+
+        Button(
+            onClick = {
+                val newInterval = intervalText.text.toIntOrNull() ?: 3
+                viewModel.handleAction(CounterAction.SetInterval(newInterval))
+                onNavigateBack()
+            },
+            modifier = Modifier.size(150.dp, 50.dp)
+        ) {
+            Text(text = "Save", fontSize = 18.sp)
+        }
+
+        Spacer(modifier = Modifier.size(16.dp))
+
+        Button(
+            onClick = onNavigateBack,
+            modifier = Modifier.size(150.dp, 50.dp)
+        ) {
+            Text(text = "Back", fontSize = 18.sp)
+        }
+    }
+}
+
 
 class MainActivity : ComponentActivity() {
-    private lateinit var lifecycleLogger: LifeCycleLogger
-
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val viewModel = androidx.lifecycle.ViewModelProvider(this)[LifeTrackerViewModel::class.java]
-        lifecycleLogger = LifeCycleLogger(viewModel)
-
-
-        lifecycle.addObserver(lifecycleLogger)
-
         enableEdgeToEdge()
         setContent {
             Cw4newTheme {
-                val snackbarHostState = remember { SnackbarHostState() }
-                val events by viewModel.events.observeAsState(emptyList())
-                val showNotifications by viewModel.showNotifications.observeAsState(true)
-                var showSettingsDialog by remember { mutableStateOf(false) }
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    val viewModel: CounterViewModel = viewModel()
 
-                LaunchedEffect(events.size) {
-                    if (events.isNotEmpty() && showNotifications) {
-                        snackbarHostState.showSnackbar(
-                            message = "Lifecycle event: ${events.first().eventName}",
-                            duration = androidx.compose.material3.SnackbarDuration.Short
-                        )
-                    }
-                }
-
-                Scaffold(
-                    modifier = Modifier.fillMaxSize(),
-                    topBar = {
-                        TopAppBar(
-                            title = { Text("LifeTracker") },
-                            actions = {
-                                IconButton(onClick = { showSettingsDialog = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Settings,
-                                        contentDescription = "Settings"
-                                    )
-                                }
-                            }
-                        )
-                    },
-                    snackbarHost = { SnackbarHost(snackbarHostState) }
-                ) { innerPadding ->
-                    if (events.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "No lifecycle events yet",
-                                color = Color.Gray,
-                                fontSize = 18.sp
-                            )
-                        }
-                    } else {
-
-                        val currentState = events.first().eventName
-                        Text(
-                            text = "Current State: $currentState",
-                            style = MaterialTheme.typography.headlineSmall,
-                            modifier = Modifier
-                                .padding(innerPadding)
-                                .padding(top = 8.dp, start = 16.dp)
-                        )
-
-
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                                .padding(top = 40.dp, bottom = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(events) { event ->
-                                val formattedTime = SimpleDateFormat(
-                                    "HH:mm:ss.SSS",
-                                    Locale.getDefault()
-                                ).format(Date(event.timestamp))
-
-                                Box(
-                                    modifier = Modifier
-                                        .padding(horizontal = 16.dp)
-                                        .fillMaxSize()
-                                ) {
-                                    Text(
-                                        text = "$formattedTime - ${event.eventName}",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(vertical = 8.dp)
-                                            .padding(start = 16.dp),
-                                        color = event.color
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-
-                    if (showSettingsDialog) {
-                        SettingsDialog(
-                            showNotifications = showNotifications,
-                            onToggleNotifications = { viewModel.toggleNotifications(it) },
-                            onDismiss = { showSettingsDialog = false }
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        lifecycle.removeObserver(lifecycleLogger)
-    }
-}
-
-
-@Composable
-fun SettingsDialog(
-    showNotifications: Boolean,
-    onToggleNotifications: (Boolean) -> Unit,
-    onDismiss: () -> Unit
-) {
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Settings") },
-        text = {
-            androidx.compose.foundation.layout.Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Show transition notifications")
-                    androidx.compose.material3.Switch(
-                        checked = showNotifications,
-                        onCheckedChange = onToggleNotifications
+                    AppNavigation(
+                        viewModel = viewModel,
+                        modifier = Modifier.padding(innerPadding)
                     )
                 }
             }
-        },
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) {
-                Text("OK")
-            }
         }
-    )
+    }
 }
 
-@SuppressLint("ViewModelConstructorInComposable")
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Preview(showBackground = true)
 @Composable
-fun LifeTrackerPreview() {
+fun CounterPreview() {
     Cw4newTheme {
-        val viewModel = LifeTrackerViewModel()
-        viewModel.addEvent(LifecycleEvent("ON_CREATE", System.currentTimeMillis(), Color.Green))
-        viewModel.addEvent(LifecycleEvent("ON_START", System.currentTimeMillis() - 1000, Color(0xFF4CAF50)))
-        viewModel.addEvent(LifecycleEvent("ON_RESUME", System.currentTimeMillis() - 2000, Color.Blue))
+        val viewModel: CounterViewModel = viewModel()
+        CounterScreen(viewModel = viewModel, onNavigateToSettings = {})
+    }
+}
 
-        val events by viewModel.events.observeAsState(emptyList())
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("LifeTracker") },
-                    actions = {
-                        IconButton(onClick = {}) {
-                            Icon(
-                                imageVector = Icons.Default.Settings,
-                                contentDescription = "Settings"
-                            )
-                        }
-                    }
-                )
-            }
-        ) { innerPadding ->
-            Text(
-                text = "Current State: ${events.firstOrNull()?.eventName ?: "None"}",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .padding(top = 8.dp, start = 16.dp)
-            )
-
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(top = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(events) { event ->
-                    val formattedTime = SimpleDateFormat(
-                        "HH:mm:ss.SSS",
-                        Locale.getDefault()
-                    ).format(Date(event.timestamp))
-
-                    Text(
-                        text = "$formattedTime - ${event.eventName}",
-                        modifier = Modifier.padding(16.dp),
-                        color = event.color
-                    )
-                }
-            }
-        }
+@Preview(showBackground = true)
+@Composable
+fun SettingsPreview() {
+    Cw4newTheme {
+        val viewModel: CounterViewModel = viewModel()
+        SettingsScreen(viewModel = viewModel, onNavigateBack = {})
     }
 }
