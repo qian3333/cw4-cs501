@@ -65,19 +65,22 @@ data class TemperatureState(
 
 class TemperatureViewModel : ViewModel() {
     private val _state = MutableStateFlow(TemperatureState())
+    // UI collects this immutable snapshot.
     val state: StateFlow<TemperatureState> = _state.asStateFlow()
 
     init {
-        startGeneratingData()
+        // Start the generator as soon as the VM spins up.
+        generatingData()
     }
 
-    private fun startGeneratingData() {
+    private fun generatingData() {
+        // Tick every two seconds and append the latest reading.
         viewModelScope.launch {
             while (true) {
                 delay(2000)
                 _state.update { currentState ->
                     if (currentState.isRunning) {
-                        // 生成65-85°F之间的随机温度
+                        // Generate random temperature
                         val newReading = TemperatureReading(
                             value = 65 + Random.nextFloat() * 20
                         )
@@ -104,7 +107,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             Cw4newTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    TemperatureDashboard(
+                    Dashboard(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -114,11 +117,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun TemperatureDashboard(
+fun Dashboard(
     modifier: Modifier = Modifier,
     viewModel: TemperatureViewModel = viewModel()
 ) {
     val state by viewModel.state.collectAsState()
+    // Copy out for readability below.
     val readings = state.readings
 
     Column(
@@ -156,6 +160,7 @@ fun TemperatureDashboard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceAround
                     ) {
+                        // Simple inline stats for the snapshot.
                         val current = readings.last().value
                         val average = readings.map { it.value }.average()
                         val min = readings.minOf { it.value }
@@ -181,7 +186,7 @@ fun TemperatureDashboard(
                         modifier = Modifier.align(Alignment.TopStart)
                     )
                     if (readings.size >= 2) {
-                        TemperatureChart(
+                        Chart(
                             readings = readings,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -212,6 +217,7 @@ fun TemperatureDashboard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // Time stamp left, value right keeps rows scannable.
                     Text(timeString)
                     Text("%.1f°F".format(reading.value))
                 }
@@ -236,10 +242,11 @@ private fun StatItem(label: String, value: String) {
 }
 
 @Composable
-private fun TemperatureChart(
+private fun Chart(
     readings: List<TemperatureReading>,
     modifier: Modifier = Modifier
 ) {
+    // Use theme color once outside the draw block.
     val primaryColor = MaterialTheme.colorScheme.primary
 
     Canvas(modifier = modifier) {
@@ -334,6 +341,6 @@ private fun TemperatureChart(
 @Composable
 fun DashboardPreview() {
     Cw4newTheme {
-        TemperatureDashboard()
+        Dashboard()
     }
 }
