@@ -64,17 +64,19 @@ class CounterViewModel : ViewModel() {
 
     private val _count = MutableStateFlow(0)
     private val _isAutoMode = MutableStateFlow(false)
-    private val _autoIncrementInterval = MutableStateFlow(3)
+    private val IncrementInterval = MutableStateFlow(3)
 
+    // UI reads from these exposed flows only.
     val count: StateFlow<Int> = _count.asStateFlow()
     val isAutoMode: StateFlow<Boolean> = _isAutoMode.asStateFlow()
-    val autoIncrementInterval: StateFlow<Int> = _autoIncrementInterval.asStateFlow()
+    val autoIncrementInterval: StateFlow<Int> = IncrementInterval.asStateFlow()
 
 
-    private var autoIncrementJob: Job? = null
+    private var incrementJob: Job? = null
 
 
     fun handleAction(action: CounterAction) {
+        // Central handler keeps UI button callbacks tiny.
         when (action) {
             CounterAction.Increment -> _count.value++
             CounterAction.Decrement -> _count.value--
@@ -89,7 +91,7 @@ class CounterViewModel : ViewModel() {
             }
             is CounterAction.SetInterval -> {
                 val newInterval = action.interval.coerceAtLeast(1)
-                _autoIncrementInterval.value = newInterval
+                IncrementInterval.value = newInterval
 
                 if (_isAutoMode.value) {
                     startAutoIncrement()
@@ -100,10 +102,11 @@ class CounterViewModel : ViewModel() {
 
 
     private fun startAutoIncrement() {
-        autoIncrementJob?.cancel()
-        autoIncrementJob = viewModelScope.launch {
+        // Cancel any previous loop so the latest interval applies.
+        incrementJob?.cancel()
+        incrementJob = viewModelScope.launch {
             while (true) {
-                delay(_autoIncrementInterval.value * 1000L)
+                delay(IncrementInterval.value * 1000L)
                 _count.value++
             }
         }
@@ -111,8 +114,8 @@ class CounterViewModel : ViewModel() {
 
 
     private fun stopAutoIncrement() {
-        autoIncrementJob?.cancel()
-        autoIncrementJob = null
+        incrementJob?.cancel()
+        incrementJob = null
     }
 
 
@@ -128,6 +131,7 @@ fun AppNavigation(
     viewModel: CounterViewModel,
     modifier: Modifier = Modifier
 ) {
+    // Single graph handles both screens.
     val navController = rememberNavController()
 
     NavHost(
@@ -162,6 +166,7 @@ fun CounterScreen(
     modifier: Modifier = Modifier
 ) {
 
+    // Collect flows once per recomposition.
     val count by viewModel.count.collectAsStateWithLifecycle()
     val isAutoMode by viewModel.isAutoMode.collectAsStateWithLifecycle()
     val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
@@ -199,6 +204,7 @@ fun CounterScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
+            // Keep button actions declarative via CounterAction.
             Button(
                 onClick = { viewModel.handleAction(CounterAction.Decrement) },
                 modifier = Modifier.size(80.dp, 80.dp)
@@ -256,6 +262,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Editable snapshot mirrors the flow value.
     val interval by viewModel.autoIncrementInterval.collectAsStateWithLifecycle()
     var intervalText by remember { mutableStateOf(TextFieldValue(interval.toString())) }
 
