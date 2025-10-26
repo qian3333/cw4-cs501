@@ -60,15 +60,16 @@ class LifeTrackerViewModel : ViewModel() {
     val events: LiveData<List<LifecycleEvent>> = _events
 
 
-    private val _showNotifications = MutableLiveData(true)
-    val showNotifications: LiveData<Boolean> = _showNotifications
+    private val mutableLiveData = MutableLiveData(true)
+    val showNotifications: LiveData<Boolean> = mutableLiveData
 
 
     fun toggleNotifications(enabled: Boolean) {
-        _showNotifications.value = enabled
+        mutableLiveData.value = enabled
     }
 
     fun addEvent(event: LifecycleEvent) {
+        // Keep newest events at the top of the list.
         _events.value = listOf(event) + (_events.value ?: emptyList())
     }
 }
@@ -77,6 +78,7 @@ class LifeCycleLogger(
     private val viewModel: LifeTrackerViewModel
 ) : LifecycleEventObserver {
     override fun onStateChanged(source: LifecycleOwner, event: Lifecycle.Event) {
+        // Map lifecycle events to friendly labels and colors.
         val eventName = when (event) {
             Lifecycle.Event.ON_CREATE -> "ON_CREATE"
             Lifecycle.Event.ON_START -> "ON_START"
@@ -117,19 +119,21 @@ class MainActivity : ComponentActivity() {
         lifecycleLogger = LifeCycleLogger(viewModel)
 
 
+        // Begin logging as soon as the activity is created.
         lifecycle.addObserver(lifecycleLogger)
 
         enableEdgeToEdge()
         setContent {
             Cw4newTheme {
-                val snackbarHostState = remember { SnackbarHostState() }
+                val hostState = remember { SnackbarHostState() }
                 val events by viewModel.events.observeAsState(emptyList())
-                val showNotifications by viewModel.showNotifications.observeAsState(true)
-                var showSettingsDialog by remember { mutableStateOf(false) }
+                val notifications by viewModel.showNotifications.observeAsState(true)
+                var dialog by remember { mutableStateOf(false) }
 
                 LaunchedEffect(events.size) {
-                    if (events.isNotEmpty() && showNotifications) {
-                        snackbarHostState.showSnackbar(
+                    // Surface the latest event when notifications are enabled.
+                    if (events.isNotEmpty() && notifications) {
+                        hostState.showSnackbar(
                             message = "Lifecycle event: ${events.first().eventName}",
                             duration = androidx.compose.material3.SnackbarDuration.Short
                         )
@@ -142,7 +146,7 @@ class MainActivity : ComponentActivity() {
                         TopAppBar(
                             title = { Text("LifeTracker") },
                             actions = {
-                                IconButton(onClick = { showSettingsDialog = true }) {
+                                IconButton(onClick = { dialog = true }) {
                                     Icon(
                                         imageVector = Icons.Default.Settings,
                                         contentDescription = "Settings"
@@ -151,7 +155,7 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     },
-                    snackbarHost = { SnackbarHost(snackbarHostState) }
+                    snackbarHost = { SnackbarHost(hostState) }
                 ) { innerPadding ->
                     if (events.isEmpty()) {
                         Box(
@@ -196,6 +200,7 @@ class MainActivity : ComponentActivity() {
                                         .padding(horizontal = 16.dp)
                                         .fillMaxSize()
                                 ) {
+                                    // Show each log line with the event color.
                                     Text(
                                         text = "$formattedTime - ${event.eventName}",
                                         modifier = Modifier
@@ -210,11 +215,11 @@ class MainActivity : ComponentActivity() {
                     }
 
 
-                    if (showSettingsDialog) {
-                        SettingsDialog(
-                            showNotifications = showNotifications,
+                    if (dialog) {
+                        Dialog(
+                            showNotifications = notifications,
                             onToggleNotifications = { viewModel.toggleNotifications(it) },
-                            onDismiss = { showSettingsDialog = false }
+                            onDismiss = { dialog = false }
                         )
                     }
                 }
@@ -230,7 +235,7 @@ class MainActivity : ComponentActivity() {
 
 
 @Composable
-fun SettingsDialog(
+fun Dialog(
     showNotifications: Boolean,
     onToggleNotifications: (Boolean) -> Unit,
     onDismiss: () -> Unit
@@ -267,9 +272,10 @@ fun SettingsDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Preview(showBackground = true)
 @Composable
-fun LifeTrackerPreview() {
+fun TrackerPreview() {
     Cw4newTheme {
         val viewModel = LifeTrackerViewModel()
+        // Seed predictable events so the preview has content.
         viewModel.addEvent(LifecycleEvent("ON_CREATE", System.currentTimeMillis(), Color.Green))
         viewModel.addEvent(LifecycleEvent("ON_START", System.currentTimeMillis() - 1000, Color(0xFF4CAF50)))
         viewModel.addEvent(LifecycleEvent("ON_RESUME", System.currentTimeMillis() - 2000, Color.Blue))
@@ -312,6 +318,7 @@ fun LifeTrackerPreview() {
                         Locale.getDefault()
                     ).format(Date(event.timestamp))
 
+                    // Mirror the main list so the preview matches runtime UI.
                     Text(
                         text = "$formattedTime - ${event.eventName}",
                         modifier = Modifier.padding(16.dp),
